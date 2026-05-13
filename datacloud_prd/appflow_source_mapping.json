@@ -1,0 +1,5 @@
+{
+  "_comment": "本店受注・定期の論理列名（キー）→ prd-appflow 上の実列名（値）。列名が同一なら jukkan / teiki は {} のままでよい。",
+  "jukkan": {},
+  "teiki": {}
+}

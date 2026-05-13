@@ -1,0 +1,5 @@
+{
+  "_comment": "STG: S3 バケット等の参照先（コードではなくここで管理）",
+  "crm_tables_bucket": "crm-tables",
+  "datacloud_export_default_upload_bucket": "stg-data-upload"
+}

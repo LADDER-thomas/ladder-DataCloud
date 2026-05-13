@@ -1,0 +1,18 @@
+{
+  "_comment": "--crm-brand P3 指定時に使用。sku / product_code は完全一致。未登録行は購入商品（商品カテゴリー）が category_includes_brand のみなら P3 とみなす。",
+  "target_brand": "P3",
+  "sku": {
+    "p3_teiki_7800_11700_230617": "P3",
+    "p3booster_teiki_3960": "P3",
+    "p3_2teiki_22_100_240606": "P3",
+    "P3_01": "P3",
+    "p3_booster_01": "P3",
+    "loi_001": "OTHER"
+  },
+  "product_code": {
+    "70169-00000054": "P3",
+    "70169-00000145": "OTHER",
+    "70169-00000163": "P3"
+  },
+  "category_includes_brand": ["P3", "P3 Booster"]
+}

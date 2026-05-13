@@ -1,0 +1,593 @@
+{
+  "schema_version": 1,
+  "_description": "stg-appflow NDJSON を OrderItem→Order→Account→CatalogItem→DistributionPrice まで結合し、本店受注・定期（jukkan/teiki 論理列）へ寄せる。reism 名は ladder_reism_mapping.csv の Name 列と対応。",
+  "business_decisions": {
+    "受注番号": "ord.reismobj__OrderNumber__c（表示用番号）",
+    "受注日": "ord.ecf_order_completed_at__c",
+    "account_join": "性別・生年月日・会員ランク名（および LINE ID）は Account から取得",
+    "定期ブランド絞り": "OrderItem の ecf_sku__c を主とし、無ければ ecf_variant_sku__c",
+    "全ジョイン": "Account / Order / OrderItem / CatalogItem / DistributionPrice をすべて結合（DistributionPrice は CatalogItem キーで左結合し、同一 CatalogItem に複数行ある場合は LastModifiedDate が最新の 1 行に圧縮）",
+    "定期の範囲": "本店（EC / Order）のみ。モール・TikTok は定期 04 向けソースとしない"
+  },
+  "joins": {
+    "jukkan_order_line": {
+      "grain": "1 行 = 受注明細 1 行",
+      "order": {
+        "appflow_prefix": "la-sand-reismobj__Order__c/",
+        "alias": "ord"
+      },
+      "order_item": {
+        "appflow_prefix": "la-sand-reismobj__OrderItem__c/",
+        "alias": "li",
+        "join_on": [
+          "li.reismobj__OrderId__c = ord.Id"
+        ]
+      },
+      "account": {
+        "appflow_prefix": "la-sand-Account/",
+        "alias": "acc",
+        "join_on": [
+          "ord.reismobj__Account__c = acc.Id"
+        ],
+        "how": "left"
+      },
+      "catalog_item": {
+        "appflow_prefix": "la-sand-reismobj__CatalogItem__c/",
+        "alias": "ci",
+        "join_on": [
+          "li.reismobj__CatalogItemId__c = ci.Id"
+        ],
+        "how": "left"
+      },
+      "distribution_price": {
+        "appflow_prefix": "la-sand-reismobj__DistributionPrice__c/",
+        "alias": "dp",
+        "join_on": [
+          "dp.reismobj__CatalogItem__c = ci.Id",
+          "（任意）ord.reismobj__DistributionId__c = dp.reismobj__Distribution__c が両方非空のときは併用"
+        ],
+        "how": "left",
+        "dedupe": "reismobj__CatalogItem__c 単位で LastModifiedDate 最大の 1 行"
+      }
+    },
+    "teiki_from_order": {
+      "grain": "1 行 = 定期契約（Order からの論理 1 行）。SubsOrder オブジェクトの AppFlow が無い場合の代替",
+      "source": "order_header",
+      "key_columns": [
+        "ecf_subs_order_number__c",
+        "ecf_subsorder_id__c"
+      ],
+      "filter": "ecf_subs_order_number__c または ecf_subsorder_id__c が非空の Order のみ",
+      "dedupe": "顧客番号 + 定期キーで最新（LastModifiedDate または ecf_subsorder_updated_at__c）を 1 行に"
+    },
+    "teiki_from_subsorder": {
+      "grain": "SubsOrder__c 相当のエクスポートがある場合はこちらを優先（将来）",
+      "appflow_prefix": "TBD",
+      "note": "現状 stg-appflow には SubsOrder プレフィックス無し。追加されたら jukkan_teiki_source を切替"
+    }
+  },
+  "jukkan": [
+    {
+      "column": "顧客番号",
+      "sf_fields": ["ord.ecf_customer_number__c"],
+      "fallback_sf": ["ord.ecf_number__c"],
+      "reism_names": ["Order_customer_number"],
+      "review": "confirmed"
+    },
+    {
+      "column": "メールアドレス",
+      "sf_fields": ["ord.ecf_customer_email__c", "ord.ecf_email__c"],
+      "reism_names": ["Order_customer_id", "Order_email"],
+      "review": "confirmed"
+    },
+    {
+      "column": "性別",
+      "sf_fields": ["acc.ecf_sex__c"],
+      "reism_names": ["Customer_sex"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "生年月日",
+      "sf_fields": ["acc.ecf_birth__c"],
+      "reism_names": ["Customer_birth"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "会員ランク名",
+      "sf_fields": ["acc.ecf_customer_rank_name__c"],
+      "reism_names": ["Customer_customer_rank_name"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "LINE ID",
+      "sf_fields": ["acc.ecf_line_id__c"],
+      "reism_names": ["Customer_line_id"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "更新日",
+      "sf_fields": ["ord.ecf_order_updated_at__c", "ord.LastModifiedDate"],
+      "reism_names": ["Order_updated_at"],
+      "review": "tbd_mapping_name"
+    },
+    {
+      "column": "顧客購入回数",
+      "sf_fields": ["acc.ecf_orders_count__c", "ord.ecf_orders_count__c"],
+      "reism_names": ["Customer_buy_times", "SubsOrder_orders_count"],
+      "review": "prefer_account"
+    },
+    {
+      "column": "顧客タイプ名",
+      "sf_fields": ["acc.ecf_customer_type_name__c"],
+      "reism_names": ["Customer_customer_type_name"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "顧客ID",
+      "sf_fields": ["ord.ecf_customer_id__c", "acc.ecf_customer_id__c"],
+      "reism_names": ["Order_customer_id"],
+      "review": "confirmed"
+    },
+    {
+      "column": "請求先（都道府県）",
+      "sf_fields": ["ord.reismobj__BillingState__c", "ord.ecf_prefecture_name__c"],
+      "reism_names": ["Order_billing_prefecture"],
+      "review": "tbd_exact_field"
+    },
+    {
+      "column": "請求先（郵便番号フル）",
+      "sf_fields": ["ord.reismobj__BillingPostalCode__c", "ord.ecf_full_zip__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "請求先（住所フル）",
+      "sf_fields": ["ord.reismobj__BillingStreet__c"],
+      "transform": "BillingStreet のみの場合は BillingCity/State と連結が必要か要確認",
+      "review": "tbd"
+    },
+    {
+      "column": "請求先（電話番号フル）",
+      "sf_fields": ["ord.reismobj__BillingPhone__c", "ord.ecf_full_tel__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "請求先（名前フル）",
+      "sf_fields": ["ord.reismobj__BillingLastName__c", "ord.reismobj__BillingFirstName__c"],
+      "transform": "concat_ws 姓+名+スペース",
+      "review": "confirmed_pattern"
+    },
+    {
+      "column": "お届け先（都道府県）",
+      "sf_fields": ["ord.reismobj__ShippingState__c", "ord.ecf_shipping_prefecture_name__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "お届け先（郵便番号フル）",
+      "sf_fields": ["ord.reismobj__ShippingPostalCode__c", "ord.ecf_shipping_full_zip__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "お届け先（住所フル）",
+      "sf_fields": ["ord.reismobj__ShippingStreet__c"],
+      "transform": "複数行住所は ecf_shipping_full_address__c を優先する案",
+      "review": "tbd"
+    },
+    {
+      "column": "お届け先（電話番号フル）",
+      "sf_fields": ["ord.reismobj__ShippingPhone__c", "ord.ecf_shipping_full_tel__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "お届け先（名前フル）",
+      "sf_fields": ["ord.reismobj__ShippingLastName__c", "ord.reismobj__ShippingFirstName__c"],
+      "transform": "concat_ws",
+      "review": "confirmed_pattern"
+    },
+    {
+      "column": "受注番号",
+      "sf_fields": ["ord.reismobj__OrderNumber__c"],
+      "reism_names": ["Order_number1"],
+      "review": "confirmed_display_order_number"
+    },
+    {
+      "column": "受注日",
+      "sf_fields": ["ord.ecf_order_completed_at__c"],
+      "reism_names": ["Order_order_completed_at"],
+      "review": "confirmed_order_completed_at"
+    },
+    {
+      "column": "支払い合計",
+      "sf_fields": ["ord.ecf_payment_total__c", "ord.ecf_total__c"],
+      "reism_names": ["Order_payment_total", "Order_total"],
+      "review": "confirmed_candidates"
+    },
+    {
+      "column": "合計",
+      "sf_fields": ["ord.ecf_total__c"],
+      "note": "build は支払い合計優先のためフォールバック列",
+      "review": "confirmed"
+    },
+    {
+      "column": "支払い方法",
+      "sf_fields": ["ord.ecf_payment_method_name__c", "ord.reismobj__PaymentMethod__c"],
+      "reism_names": ["Order_payment_method_name"],
+      "review": "confirmed"
+    },
+    {
+      "column": "受注種別",
+      "sf_fields": ["ord.ecf_order_kind__c"],
+      "reism_names": ["Order_order_kind"],
+      "review": "tbd"
+    },
+    {
+      "column": "対応状況",
+      "sf_fields": ["ord.ecf_order_human_state__c", "ord.ecf_order_state__c"],
+      "reism_names": ["Order_human_state", "Order_state"],
+      "review": "confirmed_candidates"
+    },
+    {
+      "column": "送料",
+      "sf_fields": ["ord.ecf_deliv_fee__c", "ord.reismobj__base_shipping_fee__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "決済状況",
+      "sf_fields": ["ord.ecf_payment_human_state__c", "ord.ecf_pay_human_state__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "取消日",
+      "sf_fields": ["ord.ecf_canceled_at__c"],
+      "reism_names": ["Order_canceled_at"],
+      "review": "confirmed"
+    },
+    {
+      "column": "購入商品（商品コード）",
+      "sf_fields": ["li.ecf_product_number__c", "li.reismobj__CatalogItemId__c"],
+      "join_step": "order_line",
+      "reism_names": ["OrderItem_product_number"],
+      "review": "confirmed"
+    },
+    {
+      "column": "購入商品（SKUコード）",
+      "sf_fields": ["li.ecf_sku__c", "li.ecf_variant_sku__c", "ci.reismobj__StockKeepingUnit__c"],
+      "join_step": "order_line+catalog_item",
+      "note": "ecf_sku__c 優先。無い場合は ecf_variant_sku__c または CatalogItem の SKU",
+      "reism_names": ["OrderItem_variant_sku"],
+      "review": "confirmed_ecf_sku_primary"
+    },
+    {
+      "column": "購入商品（商品名）",
+      "sf_fields": ["li.ecf_product_name__c", "li.ecf_name__c", "li.CatelogItemText__c"],
+      "join_step": "order_line",
+      "reism_names": ["OrderItem_product_name"],
+      "review": "confirmed_candidates"
+    },
+    {
+      "column": "購入商品（単価）",
+      "sf_fields": ["li.ecf_sales_price__c", "li.ecf_price__c", "li.reismobj__UnitPrice__c"],
+      "join_step": "order_line",
+      "review": "tbd"
+    },
+    {
+      "column": "購入商品（個数）",
+      "sf_fields": ["li.ecf_quantity__c", "li.reismobj__Quantity__c"],
+      "join_step": "order_line",
+      "review": "confirmed"
+    },
+    {
+      "column": "購入商品（商品カテゴリー）",
+      "sf_fields": ["li.ecf_product_category_names__c"],
+      "join_step": "order_line",
+      "reism_names": ["OrderItem_product_category_names"],
+      "review": "confirmed"
+    },
+    {
+      "column": "購入商品（原価）",
+      "sf_fields": ["li.ecf_list_price__c"],
+      "join_step": "order_line",
+      "review": "tbd"
+    },
+    {
+      "column": "購入URL",
+      "sf_fields": ["ord.ecf_url__c"],
+      "reism_names": ["Order_url"],
+      "review": "confirmed"
+    },
+    {
+      "column": "広告URLグループ名",
+      "sf_fields": ["ord.ecf_url_group__c"],
+      "reism_names": ["Order_url_group"],
+      "review": "confirmed"
+    },
+    {
+      "column": "媒体",
+      "sf_fields": ["ord.ecf_store__c", "ord.ecf_cv_route__c"],
+      "reism_names": ["Order_store"],
+      "review": "business_semantics"
+    },
+    {
+      "column": "クーポン",
+      "sf_fields": ["ord.ecf_coupon_codes__c"],
+      "reism_names": ["Order_coupon_codes"],
+      "review": "confirmed"
+    },
+    {
+      "column": "デバイス",
+      "sf_fields": ["ord.ecf_device_variant__c"],
+      "reism_names": ["Order_device_variant"],
+      "review": "confirmed"
+    },
+    {
+      "column": "受注経路",
+      "sf_fields": ["ord.ecf_cv_route__c"],
+      "reism_names": ["Order_cv_route"],
+      "review": "tbd_overlap_with_media"
+    }
+  ],
+  "teiki": [
+    {
+      "column": "顧客番号",
+      "sf_fields": ["ord.ecf_customer_number__c"],
+      "source": "teiki_from_order",
+      "review": "confirmed"
+    },
+    {
+      "column": "メールアドレス",
+      "sf_fields": ["ord.ecf_customer_email__c", "ord.ecf_email__c"],
+      "review": "confirmed"
+    },
+    {
+      "column": "性別",
+      "sf_fields": ["acc.ecf_sex__c"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "生年月日",
+      "sf_fields": ["acc.ecf_birth__c"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "会員ランク名",
+      "sf_fields": ["acc.ecf_customer_rank_name__c"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "LINE ID",
+      "sf_fields": ["acc.ecf_line_id__c"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "更新日",
+      "sf_fields": ["ord.ecf_subsorder_updated_at__c", "ord.LastModifiedDate"],
+      "reism_names": ["SubsOrder_updated_at"],
+      "review": "confirmed_candidates"
+    },
+    {
+      "column": "顧客購入回数",
+      "sf_fields": ["acc.ecf_orders_count__c", "ord.ecf_orders_count__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "顧客タイプ名",
+      "sf_fields": ["acc.ecf_customer_type_name__c"],
+      "requires": ["account"],
+      "review": "confirmed_account"
+    },
+    {
+      "column": "顧客ID",
+      "sf_fields": ["ord.ecf_customer_id__c"],
+      "review": "confirmed"
+    },
+    {
+      "column": "お届け先（都道府県）",
+      "sf_fields": ["ord.ecf_shipping_prefecture_name__c", "ord.reismobj__ShippingState__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "お届け先（郵便番号フル）",
+      "sf_fields": ["ord.ecf_shipping_full_zip__c", "ord.reismobj__ShippingPostalCode__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "お届け先（住所フル）",
+      "sf_fields": ["ord.ecf_shipping_full_address__c", "ord.reismobj__ShippingStreet__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "お届け先（電話番号フル）",
+      "sf_fields": ["ord.ecf_shipping_full_tel__c", "ord.reismobj__ShippingPhone__c"],
+      "review": "tbd"
+    },
+    {
+      "column": "お届け先（名前フル）",
+      "sf_fields": ["ord.ecf_shipping_full_name__c"],
+      "fallback_transform": "ShippingLastName + ShippingFirstName",
+      "review": "tbd"
+    },
+    {
+      "column": "定期受注番号",
+      "sf_fields": ["ord.ecf_subs_order_number__c", "ord.Name"],
+      "reism_names": ["SubsOrder_number1", "Order_subs_order_number"],
+      "review": "confirmed"
+    },
+    {
+      "column": "定期受注ID",
+      "sf_fields": ["ord.ecf_subsorder_id__c", "ord.ecf_subs_order_id__c"],
+      "reism_names": ["SubsOrder_id"],
+      "review": "confirmed"
+    },
+    {
+      "column": "媒体",
+      "sf_fields": ["ord.ecf_store__c"],
+      "review": "same_as_jukkan"
+    },
+    {
+      "column": "ステータス",
+      "sf_fields": ["ord.ecf_subsorder_human_state__c", "ord.ecf_subsorder_state__c"],
+      "reism_names": ["SubsOrder_human_state", "SubsOrder_state"],
+      "review": "confirmed"
+    },
+    {
+      "column": "定期回数",
+      "sf_fields": ["ord.ecf_subsorder_times__c"],
+      "reism_names": ["SubsOrder_times"],
+      "review": "confirmed"
+    },
+    {
+      "column": "配送サイクル",
+      "sf_fields": ["ord.ecf_scheduled_delivery_time__c"],
+      "note": "従来 CSV は任意テキスト。無い場合は何ヶ月ごと/何日に/何日ごとの合成で代用（build_crm_tables._cycle と同趣旨）",
+      "reism_names": ["SubsOrder_scheduled_delivery_time"],
+      "review": "needs_business_mapping"
+    },
+    {
+      "column": "何ヶ月ごと",
+      "sf_fields": ["ord.ecf_scheduled_to_be_delivered_every_x_month__c"],
+      "reism_names": ["SubsOrder_scheduled_to_be_delivered_every_x_month"],
+      "review": "confirmed"
+    },
+    {
+      "column": "何日に",
+      "sf_fields": ["ord.ecf_scheduled_to_be_delivered_on_xth_day__c"],
+      "reism_names": ["SubsOrder_scheduled_to_be_delivered_on_xth_day"],
+      "review": "confirmed"
+    },
+    {
+      "column": "何日ごと",
+      "sf_fields": ["ord.ecf_scheduled_to_be_delivered_every_x_day__c"],
+      "reism_names": ["SubsOrder_scheduled_to_be_delivered_every_x_day"],
+      "review": "confirmed"
+    },
+    {
+      "column": "支払い方法",
+      "sf_fields": ["ord.ecf_payment_method_name__c"],
+      "reism_names": ["SubsOrder_payment_method_name"],
+      "review": "confirmed"
+    },
+    {
+      "column": "広告URLグループ",
+      "sf_fields": ["ord.ecf_url_group__c"],
+      "review": "confirmed"
+    },
+    {
+      "column": "広告主",
+      "sf_fields": ["ord.ecf_advertiser__c"],
+      "reism_names": ["Order_advertiser"],
+      "review": "confirmed"
+    },
+    {
+      "column": "次回配送予定日",
+      "sf_fields": ["ord.ecf_subsorder_scheduled_to_be_delivered__c", "ord.ecf_scheduled_to_be_delivered_at__c"],
+      "reism_names": ["SubsOrder_scheduled_to_be_delivered_at"],
+      "review": "tbd_which_is_next"
+    },
+    {
+      "column": "キャンセル日",
+      "sf_fields": ["ord.ecf_canceled_at__c"],
+      "reism_names": ["SubsOrder_canceled_at"],
+      "review": "confirmed"
+    },
+    {
+      "column": "停止理由",
+      "sf_fields": ["ord.ecf_suspend_reasons__c"],
+      "reism_names": ["SubsOrder_suspend_reasons"],
+      "review": "confirmed"
+    },
+    {
+      "column": "キャンセル理由",
+      "sf_fields": ["ord.ecf_cancel_reasons__c"],
+      "reism_names": ["SubsOrder_cancel_reasons"],
+      "review": "confirmed"
+    },
+    {
+      "column": "購入商品（SKUコード）",
+      "sf_fields": ["li.ecf_sku__c", "li.ecf_variant_sku__c"],
+      "note": "定期キーごとに「最新の Order」に紐づく OrderItem から先頭非空を採用（ブランド絞りは ecf_sku__c 主）",
+      "review": "confirmed_orderitem_aggregate"
+    },
+    {
+      "column": "購入商品（商品コード）",
+      "sf_fields": ["li.ecf_product_number__c"],
+      "note": "同上 OrderItem 行から取得",
+      "review": "confirmed_orderitem_aggregate"
+    },
+    {
+      "column": "購入商品（商品カテゴリー）",
+      "sf_fields": ["li.ecf_product_category_names__c"],
+      "note": "同上 OrderItem 行から取得",
+      "review": "confirmed_orderitem_aggregate"
+    }
+  ],
+  "salesforce_source": {
+    "setup_org_url": "https://enterprise-agility-9382--agentforce.sandbox.my.salesforce-setup.com/",
+    "note": "stg-appflow バケットの NDJSON は上記 Salesforce サンドボックス組織上のオブジェクトを Amazon AppFlow 等でオブジェクト単位エクスポートしたもの。オブジェクト定義・項目・主従関係の正は Setup のオブジェクト管理で確認する。"
+  },
+  "object_relationships": [
+    {
+      "child_api": "reismobj__OrderItem__c",
+      "lookup_field": "reismobj__OrderId__c",
+      "parent_api": "reismobj__Order__c",
+      "parent_key": "Id",
+      "cardinality": "N:1",
+      "role": "受注明細行は注文ヘッダに属する"
+    },
+    {
+      "child_api": "reismobj__Order__c",
+      "lookup_field": "reismobj__Account__c",
+      "parent_api": "Account",
+      "parent_key": "Id",
+      "cardinality": "N:1",
+      "role": "注文は顧客（Account）に紐づく。性別・生年月日・会員ランク等の取得元"
+    },
+    {
+      "child_api": "reismobj__OrderItem__c",
+      "lookup_field": "reismobj__CatalogItemId__c",
+      "parent_api": "reismobj__CatalogItem__c",
+      "parent_key": "Id",
+      "cardinality": "N:1",
+      "role": "明細行はカタログ商品マスタに紐づく。SKU 補完・商品名補完に使用"
+    },
+    {
+      "child_api": "reismobj__DistributionPrice__c",
+      "lookup_field": "reismobj__CatalogItem__c",
+      "parent_api": "reismobj__CatalogItem__c",
+      "parent_key": "Id",
+      "cardinality": "N:1",
+      "cardinality_note": "同一 CatalogItem に対し複数 Distribution の価格行があり得る。ETL では CatalogItem 単位で最新 1 行に圧縮",
+      "role": "流通チャネル別価格。原価・単価の補助"
+    },
+    {
+      "child_api": "reismobj__DistributionPrice__c",
+      "lookup_field": "reismobj__Distribution__c",
+      "parent_api": "reismobj__Distribution__c",
+      "parent_key": "Id",
+      "cardinality": "N:1",
+      "role": "価格行は流通（Distribution）に属する。Order.reismobj__DistributionId__c と併せて絞り込み可能（両方非空時）"
+    },
+    {
+      "child_api": "reismobj__Order__c",
+      "lookup_field": "reismobj__DistributionId__c",
+      "parent_api": "reismobj__Distribution__c",
+      "parent_key": "Id",
+      "cardinality": "N:1",
+      "role": "注文が特定流通に紐づく場合。未設定のレコードでは DistributionPrice は主に CatalogItem 経由のみ結合"
+    }
+  ],
+  "review_status_legend": {
+    "confirmed": "サンプルデータまたは reism マッピングで妥当性あり",
+    "confirmed_candidates": "複数 SF 候補のうち業務で 1 つに決める必要あり",
+    "needs_account_join": "Account NDJSON との join が必須",
+    "needs_design": "1 対 1 の SF 列が無いため別ロジック（分割・正規表現）が要る",
+    "tbd": "要調査"
+  }
+}

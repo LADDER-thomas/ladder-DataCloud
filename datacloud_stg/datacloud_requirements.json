@@ -1,0 +1,87 @@
+{
+  "$comment": "日付正規化は output.date_columns_iso の「和名」で一致。出力ヘッダーは英語（column_i18n.py の対応）。sources[].column_rename は和名→英名の上書き（任意）。sources[].columns は出力する和名列のリスト（null で全列）。",
+  "s3": {
+    "bucket": "stg-data-upload",
+    "prefix": "datacloud/inbound/",
+    "region": "ap-northeast-1"
+  },
+  "output": {
+    "encoding": "utf-8",
+    "newline": "\\n",
+    "date_columns_iso": [
+      "作成日",
+      "更新日",
+      "受注日",
+      "発送予定日",
+      "配送予定日",
+      "発送日",
+      "配送日",
+      "生年月日",
+      "次回配送予定日",
+      "次回発送予定日",
+      "前回発送予定日",
+      "前回配送予定日",
+      "モール注文日時",
+      "注文取込日時",
+      "出荷依頼日時",
+      "注文作成時刻",
+      "注文の支払い日時",
+      "発送準備完了日時",
+      "発送日時",
+      "配達日時",
+      "受送信時刻",
+      "キャンセル日",
+      "削除日",
+      "初回督促日",
+      "最終督促日",
+      "支払期限",
+      "仮売上日",
+      "実売上日",
+      "入金日",
+      "取消日",
+      "キャンセル日時",
+      "返信開始時刻",
+      "返信時刻",
+      "承認依頼時刻",
+      "承認時刻"
+    ]
+  },
+  "sources": [
+    {
+      "id": "jukkan",
+      "input_file": "ec_orders_input.csv",
+      "output_key": "jukkan_management.csv",
+      "columns": null,
+      "column_rename": {}
+    },
+    {
+      "id": "teiki",
+      "input_file": "subscription_input.csv",
+      "output_key": "teiki_subscription.csv",
+      "columns": null,
+      "column_rename": {}
+    },
+    {
+      "id": "mall",
+      "input_file": "各モール購入者情報.csv",
+      "output_key": "mall_buyers.csv",
+      "columns": null,
+      "column_rename": {}
+    },
+    {
+      "id": "tiktok",
+      "input_file": "TikTok.csv",
+      "output_key": "tiktok_orders.csv",
+      "columns": null,
+      "column_rename": {},
+      "dialect": "excel"
+    },
+    {
+      "id": "mail",
+      "input_file": "mailexport.csv",
+      "output_key": "mail_export.csv",
+      "columns": null,
+      "column_rename": {}
+    }
+  ]
+}

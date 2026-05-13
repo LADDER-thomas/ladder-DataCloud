@@ -1,0 +1,11 @@
+﻿reason_id,class1_segment_1,class1_segment_2,class1_segment_3,class1_segment_4,class1_segment_5,class1_segment_6,class1_segment_7,class1_segment_8
+CR0001,P3,解約依頼,,,,,,
+CR0002,P3,解約依頼,他社品購入,,,,,
+CR0003,P3,解約依頼,余っている,,,,,
+CR0004,P3,解約依頼,価格高い（金銭的事情）,,,,,
+CR0005,P3,解約依頼,健康障害（Dr_STOP、妊娠含む）,,,,,
+CR0006,P3,解約依頼,効果あった,,,,,
+CR0007,P3,解約依頼,効果感じない,,,,,
+CR0008,P3,解約依頼,味不適、飲みにくい,,,,,
+CR0009,P3,解約依頼,機器不良・長期不在（海外、出張、入院など）,,,,,
+CR0010,P3,解約依頼,理由不明,,,,,

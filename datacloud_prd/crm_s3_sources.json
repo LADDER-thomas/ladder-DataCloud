@@ -1,0 +1,27 @@
+{
+  "bucket": "prd-data-upload",
+  "prefix": "",
+  "region": "ap-northeast-1",
+  "crm_brand": "P3",
+  "brand_mapping_bucket": "crm-tables",
+  "brand_mapping_prefix": "",
+  "_comment_reism_mapping_csv": "省略時は datacloud_prd/ladder_reism_mapping.csv。Ecforce API 名→Salesforce 項目の公式対応表",
+  "reism_mapping_csv": "ladder_reism_mapping.csv",
+  "appflow": {
+    "bucket": "prd-appflow",
+    "prefix": "",
+    "format": "ndjson_joined",
+    "_comment_format": "ndjson_joined: Account/Order/OrderItem/CatalogItem/DistributionPrice を結合。csv: jukkan_keys/teiki_keys の CSV",
+    "_comment_subscription_record_type_ids": "reismobj__Order__c の「定期」レコードタイプ Id（本プロジェクトで 012RB00000A1kW5YAJ を確認済み。別 org なら差し替え）",
+    "subscription_record_type_ids": ["012RB00000A1kW5YAJ"]
+  },
+  "objects": {
+    "_comment_jukkan_teiki": "ndjson_joined 時は jukkan/teiki を GetObject しない。下記値はプレースホルダ（キー互換用）",
+    "jukkan": "_placeholder.jukkan_not_fetched",
+    "teiki": "_placeholder.teiki_not_fetched",
+    "mall": "各モール購入者情報.csv",
+    "tiktok": "TikTok.csv",
+    "mail": "mailexport.csv",
+    "brand_mapping": "商品マッピングマスタ.json"
+  }
+}
