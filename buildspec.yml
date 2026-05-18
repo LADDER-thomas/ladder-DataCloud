@@ -5,6 +5,7 @@ phases:
     commands:
       - set -euxo pipefail
       - echo "START INSTALL PHASE"
+      - mkdir -p tableau-achievement
       - echo "Fetching .env from Parameter Store /performance_management/${build_env}"
       - aws ssm get-parameter --name "/performance_management/${build_env}" --with-decryption --query "Parameter.Value" --output text > tableau-achievement/.env
 
